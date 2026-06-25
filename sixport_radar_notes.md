@@ -166,3 +166,59 @@ SixPortRadarSimulator.save(data, "exp01.npz", "exp01.csv")
 
 選定主攻方向（靜態雜波校正 or 動態干擾分離）後，可把該方法直接實作進 pipeline，
 用模擬器跑對照實驗，量出相對基線把 RMSE 壓低多少。
+
+# Appendix
+
+## 把每個參數逐一標註
+
+```python
+from sixport_radar_sim import SixPortRadarSimulator, Path, vital_signs_motion, sinusoid_motion
+
+# ── 建立模擬器 ──────────────────────────────────────────────
+sim = SixPortRadarSimulator(
+    f0_hz=24e9,      # 載波頻率 24 GHz（決定波長 λ＝c/f0，影響相位對位移的靈敏度）
+    fs_hz=200.0,     # 取樣率 200 Hz（四路檢波電壓每秒取樣 200 點；要 > 2×最高運動頻率）
+)
+
+# ── 加入路徑：Path(距離, 反射率, 運動, name=標籤) ──────────────
+# 主目標：胸腔
+sim.add_path(Path(
+    0.5,                    # distance_m：標稱單程距離 0.5 公尺（雷達到胸腔）
+    1.0,                    # reflectivity：反射率 1.0（相對強度，含 RCS＋路徑損耗，越大回波越強）
+    vital_signs_motion(),   # motion：運動模型＝生命徵象（預設 呼吸 4mm/0.3Hz＋心跳 0.4mm/1.2Hz）
+    name="chest",           # name：標籤（純命名，不影響計算）
+))                                                                          # 主目標
+
+# 靜態多徑：牆（沒給 motion → 預設不動，固定相量）
+sim.add_path(Path(
+    0.87,            # distance_m：牆在 0.87 公尺處
+    0.8,             # reflectivity：反射率 0.8（牆反射略弱於胸腔）
+    name="wall",     # name：標籤；未傳 motion，預設 static（位移恆為 0）
+))                                                                          # 靜態多徑（牆）
+
+# 移動干擾源：風扇（會動的路徑）
+sim.add_path(Path(
+    0.70,                        # distance_m：干擾源在 0.70 公尺處
+    0.5,                         # reflectivity：反射率 0.5（干擾回波中等強度）
+    sinusoid_motion(2e-3, 0.75), # motion：正弦運動 → 振幅 2e-3 公尺(=2mm)、頻率 0.75 Hz
+    name="fan",                  # name：標籤
+))                                                                          # 移動干擾源
+
+# ── 採集數據 ────────────────────────────────────────────────
+data = sim.collect(
+    duration_s=30,   # 模擬時長 30 秒（總樣本數 ＝ duration_s × fs_hz ＝ 30×200 ＝ 6000 點）
+)                    # 回傳 dict：data["V"]＝4×N 四路檢波電壓、data["B_true"]＝複數真值、data["t"]＝時間軸
+
+# ── 存檔 ────────────────────────────────────────────────────
+SixPortRadarSimulator.save(
+    data,            # 要儲存的資料（上一步 collect 的回傳值）
+    "exp01.npz",     # npz_path：壓縮檔，含 v1–v4 ＋ ground truth（B_true）＋ 設定 meta，供離線開發/算誤差
+    "exp01.csv",     # csv_path：純文字表格，欄位 t, v1, v2, v3, v4，可直接餵演算法或用 Excel 開
+)
+```
+
+幾個容易混淆的點補充一下。`Path` 的前兩個是**位置參數**（順序固定：先距離、後反射率），第三個 `motion` 可給可不給——不給就預設靜止，所以牆那行才能省略。`vital_signs_motion()` 和 `sinusoid_motion()` 本身還能再細調參數（例如 `vital_signs_motion(resp_amp_m=5e-3, resp_hz=0.25)` 改呼吸振幅與頻率），這裡用預設值。
+
+另外提醒一個小數字：`duration_s=30 × fs_hz=200 = 6000`，但實際存出來的 CSV 是 6001 行——多的那一行是欄位標題（`t,v1,v2,v3,v4`），資料本身正好 6000 點。
+
+需要的話我可以把這份加好註解的版本，連同各函式可調參數的完整對照表，一起整理成一個檔案給你。

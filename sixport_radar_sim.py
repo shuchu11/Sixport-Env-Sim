@@ -50,7 +50,7 @@ C_LIGHT = 299_792_458.0  # m/s
 
 
 # ---------------------------------------------------------------------------
-# 1. Motion models  (each returns displacement x(t) in metres)
+# 1. Motion models  (each returns displacement x(t) in metres)  : 目標物震動行為
 # ---------------------------------------------------------------------------
 def static_motion() -> Callable[[np.ndarray], np.ndarray]:
     """No motion. Useful for clutter / static multipath."""
@@ -78,7 +78,7 @@ def vital_signs_motion(resp_amp_m: float = 4e-3, resp_hz: float = 0.30,
     return x
 
 
-def random_walk_motion(step_std_m: float, fs: float,
+def random_walk_motion(step_std_m: float,
                        seed: Optional[int] = None) -> Callable[[np.ndarray], np.ndarray]:
     """Brownian displacement, e.g. for a slowly drifting interferer."""
     rng = np.random.default_rng(seed)
@@ -91,7 +91,7 @@ def random_walk_motion(step_std_m: float, fs: float,
 
 
 # ---------------------------------------------------------------------------
-# 2. Path / target description
+# 2. Path / target description       反射回來的波函數
 # ---------------------------------------------------------------------------
 @dataclass
 class Path:
@@ -119,19 +119,24 @@ class Path:
 
 
 # ---------------------------------------------------------------------------
-# 3. Six-port hardware model (imperfections live here)
+# 3. Six-port hardware model (imperfections live here)   量測4-port功率，加入硬體干擾選項。目前輸入波振幅是定值感覺有誤
 # ---------------------------------------------------------------------------
 @dataclass
 class SixPortHardware:
     """
     Models the four-detector six-port quadrature demodulator.
 
-    Ideal: detector i measures power of (RF + LO*exp(j*theta_i)),
-    theta_i = [0, 90, 180, 270] deg. Differential combination -> I, Q.
+    Ideal detector powers follow the four six-port node equations:
+        v1 = 1/4 | -A + jB |^2
+        v2 = 1/4 | jA - B  |^2
+        v3 = 1/4 | -A + B  |^2
+        v4 = 1/4 | jA + jB |^2
+
+    A is the reference/input wave and B is the received/output wave.
 
     Imperfections you can sweep for your research:
-      lo_amplitude        : reference (LO) magnitude L
-      phase_err_deg       : per-detector phase error added to the ideal theta_i
+      lo_amplitude        : reference/input wave magnitude |A|
+      phase_err_deg       : per-detector phase error added to the B branch
       responsivity        : per-detector power->voltage gain (mismatch = imbalance)
       nonlinearity        : per-detector 2nd-order term gamma_i (V = R*P + gamma*P^2)
       dc_offset           : per-detector additive DC (LO self-mixing / bias)
@@ -146,22 +151,31 @@ class SixPortHardware:
     seed: Optional[int] = None
 
     def __post_init__(self):
-        self._theta = np.deg2rad(np.array([0.0, 90.0, 180.0, 270.0])
-                                 + np.array(self.phase_err_deg))
+        self._phase_err = np.deg2rad(np.array(self.phase_err_deg))
         self._rng = np.random.default_rng(self.seed)
 
-    def detect(self, B: np.ndarray) -> np.ndarray:
+    def detect(self, B: np.ndarray, A: Optional[np.ndarray | complex | float] = None) -> np.ndarray:
         """
-        Given complex baseband return B(t) (shape [N]) produce the four
-        detector voltages (shape [4, N]) -- the raw "experimental data".
+        Given complex wave B(t) (shape [N]) produce the four detector voltages
+        (shape [4, N]) -- the raw "experimental data".
+
+        If A is omitted, a constant reference/input wave with magnitude
+        lo_amplitude is used.
         """
-        L = self.lo_amplitude
+        if A is None:
+            A = self.lo_amplitude
+
+        A = np.asarray(A, dtype=complex)
         N = len(B)
         V = np.empty((4, N), dtype=float)
+
+        a_coeff = np.array([-1.0, 1.0j, -1.0, 1.0j], dtype=complex)
+        b_coeff = np.array([1.0j, -1.0, 1.0, 1.0j], dtype=complex)
+        b_coeff = b_coeff * np.exp(1j * self._phase_err)
+
         for i in range(4):
-            # power at detector i: |B + L*exp(j*theta_i)|^2
-            ref = L * np.exp(1j * self._theta[i])
-            P = np.abs(B + ref) ** 2
+            # Six-port detector node power from the ideal equations above.
+            P = 0.25 * np.abs(a_coeff[i] * A + b_coeff[i] * B) ** 2
             R = self.responsivity[i]
             g = self.nonlinearity[i]
             Vi = R * P + g * P ** 2 + self.dc_offset[i]
@@ -251,35 +265,13 @@ class SixPortRadarSimulator:
 def extract_iq(V: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Differential six-port combination:
-        I = v1 - v3   (theta 0 vs 180)
-        Q = v2 - v4   (theta 90 vs 270)
-    This cancels the common |B|^2 + L^2 terms in the ideal case.
+        I = v4 - v3 = Re{A B*}
+        Q = v2 - v1 = Im{A B*}
+    This cancels the common 1/4 * (|A|^2 + |B|^2) terms in the ideal case.
     """
-    I = V[0] - V[2]
-    Q = V[1] - V[3]
+    I = V[3] - V[2]
+    Q = V[1] - V[0]
     return I, Q
-
-
-def fit_ellipse(I: np.ndarray, Q: np.ndarray) -> dict:
-    """
-    Algebraic conic fit  a*x^2 + b*x*y + c*y^2 + d*x + e*y + f = 0
-    (Fitzgibbon-style, least squares). Returns geometric ellipse parameters
-    used to undo the six-port I/Q imbalance + DC offset (incl. STATIC multipath).
-    """
-    x = I.astype(float)
-    y = Q.astype(float)
-    D = np.column_stack([x * x, x * y, y * y, x, y, np.ones_like(x)])
-    # Solve the homogeneous system via SVD (smallest singular vector).
-    _, _, Vt = np.linalg.svd(D, full_matrices=False)
-    a, b, c, d, e, f = Vt[-1]
-
-    # Center of ellipse
-    denom = b * b - 4 * a * c
-    if abs(denom) < 1e-20:
-        denom = 1e-20
-    x0 = (2 * c * d - b * e) / denom
-    y0 = (2 * a * e - b * d) / denom
-    return {"coef": (a, b, c, d, e, f), "center": (x0, y0)}
 
 
 def calibrate_iq(I: np.ndarray, Q: np.ndarray) -> Tuple[np.ndarray, np.ndarray, dict]:
@@ -289,33 +281,57 @@ def calibrate_iq(I: np.ndarray, Q: np.ndarray) -> Tuple[np.ndarray, np.ndarray, 
       2) correct amplitude + phase imbalance -> turn ellipse back into a circle
     Returns calibrated (I_c, Q_c) plus the fit dict.
     """
-    fit = fit_ellipse(I, Q)
-    x0, y0 = fit["center"]
+    I = np.asarray(I, dtype=float).ravel()
+    Q = np.asarray(Q, dtype=float).ravel()
+    if I.size != Q.size or I.size < 6:
+        raise ValueError("I and Q must have the same length and at least 6 samples.")
+
+    # Match the normalized conic used in cw_iq_imbalance.py:
+    #     I^2 + A*Q^2 + B*I*Q + C*I + D*Q + E = 0
+    # This parameterization gives the amplitude and phase imbalance directly.
+    M = np.column_stack((Q ** 2, I * Q, I, Q, np.ones_like(I)))
+    A, B, C, D, E = np.linalg.lstsq(M, -(I ** 2), rcond=None)[0]
+    if A <= 0 or B * B - 4.0 * A >= 0:
+        raise ValueError("The fitted conic is not a valid ellipse.")
+
+    hessian = np.array([[2.0, B], [B, 2.0 * A]])
+    x0, y0 = np.linalg.solve(hessian, -np.array([C, D]))
     xc = I - x0
     yc = Q - y0
 
-    # Gram-Schmidt / amplitude-phase imbalance correction from the conic coefs.
-    a, b, c, d, e, f = fit["coef"]
-    # rotation angle of the ellipse
-    if abs(a - c) < 1e-20:
-        theta = np.pi / 4 if b > 0 else -np.pi / 4
-    else:
-        theta = 0.5 * np.arctan2(b, (a - c))
-    ct, st = np.cos(theta), np.sin(theta)
-    # rotate into ellipse principal axes
-    xr = ct * xc + st * yc
-    yr = -st * xc + ct * yc
-    # estimate semi-axes from the rotated point cloud (robust to noise)
-    ax = np.sqrt(np.mean(xr ** 2)) + 1e-12
-    ay = np.sqrt(np.mean(yr ** 2)) + 1e-12
-    scale = (ax + ay) / 2.0
-    xr *= scale / ax
-    yr *= scale / ay
-    # rotate back
-    I_c = ct * xr - st * yr
-    Q_c = st * xr + ct * yr
-    fit["theta"] = theta
-    fit["semi_axes"] = (ax, ay)
+    amp_imbalance = np.sqrt(1.0 / A)
+    phi = np.arcsin(np.clip(B / (2.0 * np.sqrt(A)), -1.0, 1.0))
+
+    def correct_with_phase(phase: float) -> Tuple[np.ndarray, np.ndarray, float]:
+        if abs(np.cos(phase)) < 1e-8:
+            raise ValueError("Phase imbalance is too close to +/-90 degrees.")
+        q_corr = (yc / amp_imbalance - xc * np.sin(phase)) / np.cos(phase)
+        radius = np.hypot(xc, q_corr)
+        radial_cv = np.std(radius) / (np.mean(radius) + 1e-12)
+        return xc, q_corr, float(radial_cv)
+
+    # Six-port I/Q extraction uses angle(A*conj(B)); depending on channel signs,
+    # Eq. (5)'s phase sign can be reversed. Choose the more circular result.
+    candidates = [(phi, correct_with_phase(phi))]
+    if abs(phi) > 1e-12:
+        candidates.append((-phi, correct_with_phase(-phi)))
+    phase_used, (I_c, Q_c, radial_cv) = min(candidates, key=lambda item: item[1][2])
+
+    fit = {
+        "coef": (1.0, B, A, C, D, E),
+        "center": (float(x0), float(y0)),
+        "A": float(A),
+        "B": float(B),
+        "C": float(C),
+        "D": float(D),
+        "E": float(E),
+        "amplitude_imbalance": float(amp_imbalance),
+        "phase_imbalance_rad": float(phi),
+        "phase_imbalance_deg": float(np.rad2deg(phi)),
+        "phase_used_rad": float(phase_used),
+        "phase_used_deg": float(np.rad2deg(phase_used)),
+        "radial_cv": radial_cv,
+    }
     return I_c, Q_c, fit
 
 
@@ -323,11 +339,17 @@ def recover_displacement(I: np.ndarray, Q: np.ndarray, wavelength_m: float
                          ) -> np.ndarray:
     """
     Phase demodulation -> displacement.
-    phi(t) = atan2(Q, I); unwrap; x(t) = phi * lambda / (4*pi).
+    The four-detector equations above recover A*B-conjugate phase when A is
+    the constant reference wave:
+        atan2(Q, I) = angle(A B*) = -angle(B) + constant.
+    Since target displacement increases angle(B) by 4*pi*x/lambda, the
+    recovered displacement needs the negative sign below.
+
+    phi(t) = atan2(Q, I); unwrap; x(t) = -phi * lambda / (4*pi).
     Mean-subtracted (only relative displacement is observable in CW).
     """
     phi = np.unwrap(np.arctan2(Q, I))
-    x = phi * wavelength_m / (4.0 * np.pi)
+    x = -phi * wavelength_m / (4.0 * np.pi)
     return x - np.mean(x)
 
 

@@ -1,0 +1,52 @@
+radar:
+  f0_hz: 24000000000.0
+  fs_hz: 200.0
+  duration_s: 30.0
+
+hardware:
+  lo_amplitude: 1.0
+  phase_err_deg: [0.0, 8.0, -5.0, 6.0]
+  responsivity: [1.0, 0.85, 1.10, 0.95]
+  nonlinearity: [0.02, 0.0, 0.03, 0.01]
+  dc_offset: [0.0, 0.0, 0.0, 0.0]
+  noise_v_rms: 0.002
+  seed: 1
+
+evaluation:
+  target_path: chest
+
+paths:
+  - name: chest
+    distance_m: 0.5
+    reflectivity: 1.0
+    extra_phase: 0.0
+    motion:
+      type: vital_signs
+      resp_amp_m: 0.004
+      resp_hz: 0.30
+      heart_amp_m: 0.0004
+      heart_hz: 1.20
+      resp_phase: 0.0
+      heart_phase: 0.0
+
+  - name: wall_clutter
+    distance_m: 0.87
+    reflectivity: 0.8
+    extra_phase: 1.1
+    motion:
+      type: static
+
+  - name: moving_interferer
+    distance_m: 0.70
+    reflectivity: 0.5
+    extra_phase: 0.0
+    motion:
+      type: sinusoid
+      amplitude_m: 0.002
+      freq_hz: 0.75
+      phase_rad: 0.0
+
+outputs:
+  figure_png: sixport_demo.png
+  dataset_npz: sixport_dataset.npz
+  dataset_csv: sixport_dataset.csv

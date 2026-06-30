@@ -42,7 +42,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, asdict
-from typing import Callable, List, Optional, Tuple
+from pathlib import Path as FilePath
+from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 
@@ -91,6 +92,204 @@ def random_walk_motion(step_std_m: float,
 
 
 # ---------------------------------------------------------------------------
+# Configuration loading
+# ---------------------------------------------------------------------------
+def _strip_yaml_comment(line: str) -> str:
+    in_single = False
+    in_double = False
+    for idx, ch in enumerate(line):
+        if ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double:
+            return line[:idx]
+    return line
+
+
+def _parse_scalar(value: str) -> Any:
+    value = value.strip()
+    if value == "":
+        return None
+    if value[0:1] in ("'", '"') and value[-1:] == value[0]:
+        return value[1:-1]
+    lowered = value.lower()
+    if lowered in ("true", "false"):
+        return lowered == "true"
+    if lowered in ("null", "none", "~"):
+        return None
+    if value.startswith("[") and value.endswith("]"):
+        body = value[1:-1].strip()
+        if not body:
+            return []
+        return [_parse_scalar(part.strip()) for part in body.split(",")]
+    try:
+        if any(ch in value for ch in (".", "e", "E")):
+            return float(value)
+        return int(value)
+    except ValueError:
+        return value
+
+
+def _prepare_yaml_lines(text: str) -> List[Tuple[int, str]]:
+    lines = []
+    for raw in text.splitlines():
+        line = _strip_yaml_comment(raw).rstrip()
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        lines.append((indent, line.strip()))
+    return lines
+
+
+def _parse_yaml_block(lines: List[Tuple[int, str]], start: int, indent: int) -> Tuple[Any, int]:
+    if start >= len(lines):
+        return {}, start
+
+    is_list = lines[start][0] == indent and lines[start][1].startswith("- ")
+    if is_list:
+        values = []
+        idx = start
+        while idx < len(lines):
+            line_indent, text = lines[idx]
+            if line_indent != indent or not text.startswith("- "):
+                break
+            item_text = text[2:].strip()
+            idx += 1
+            if item_text == "":
+                item, idx = _parse_yaml_block(lines, idx, indent + 2)
+                values.append(item)
+                continue
+            if ":" in item_text:
+                key, raw_value = item_text.split(":", 1)
+                item = {}
+                raw_value = raw_value.strip()
+                if raw_value:
+                    item[key.strip()] = _parse_scalar(raw_value)
+                else:
+                    item[key.strip()], idx = _parse_yaml_block(lines, idx, indent + 2)
+                if idx < len(lines) and lines[idx][0] > indent:
+                    extra, idx = _parse_yaml_block(lines, idx, indent + 2)
+                    if isinstance(extra, dict):
+                        item.update(extra)
+                values.append(item)
+            else:
+                values.append(_parse_scalar(item_text))
+        return values, idx
+
+    values = {}
+    idx = start
+    while idx < len(lines):
+        line_indent, text = lines[idx]
+        if line_indent < indent:
+            break
+        if line_indent > indent:
+            raise ValueError(f"Unexpected indentation near: {text}")
+        if ":" not in text:
+            raise ValueError(f"Expected 'key: value' near: {text}")
+        key, raw_value = text.split(":", 1)
+        key = key.strip()
+        raw_value = raw_value.strip()
+        idx += 1
+        if raw_value:
+            values[key] = _parse_scalar(raw_value)
+        else:
+            values[key], idx = _parse_yaml_block(lines, idx, indent + 2)
+    return values, idx
+
+
+def load_yaml_config(path: str) -> dict:
+    """Load the small YAML subset used by the simulator configuration files."""
+    text = FilePath(path).read_text(encoding="utf-8")
+    lines = _prepare_yaml_lines(text)
+    if not lines:
+        return {}
+    config, idx = _parse_yaml_block(lines, 0, lines[0][0])
+    if idx != len(lines):
+        raise ValueError("Could not parse the full YAML configuration.")
+    if not isinstance(config, dict):
+        raise ValueError("Top-level YAML configuration must be a mapping.")
+    return config
+
+
+def motion_from_config(config: Optional[dict]) -> Callable[[np.ndarray], np.ndarray]:
+    """Create a motion model from a YAML motion block."""
+    if config is None:
+        return static_motion()
+    motion_type = str(config.get("type", "static")).lower()
+    if motion_type == "static":
+        return static_motion()
+    if motion_type == "sinusoid":
+        return sinusoid_motion(
+            amplitude_m=float(config["amplitude_m"]),
+            freq_hz=float(config["freq_hz"]),
+            phase_rad=float(config.get("phase_rad", 0.0)),
+        )
+    if motion_type == "vital_signs":
+        return vital_signs_motion(
+            resp_amp_m=float(config.get("resp_amp_m", 4e-3)),
+            resp_hz=float(config.get("resp_hz", 0.30)),
+            heart_amp_m=float(config.get("heart_amp_m", 0.4e-3)),
+            heart_hz=float(config.get("heart_hz", 1.20)),
+            resp_phase=float(config.get("resp_phase", 0.0)),
+            heart_phase=float(config.get("heart_phase", 0.0)),
+        )
+    if motion_type == "random_walk":
+        return random_walk_motion(
+            step_std_m=float(config["step_std_m"]),
+            seed=config.get("seed"),
+        )
+    raise ValueError(f"Unknown motion type: {motion_type}")
+
+
+def hardware_from_config(config: Optional[dict]) -> SixPortHardware:
+    """Create a SixPortHardware instance from a YAML hardware block."""
+    if config is None:
+        return SixPortHardware()
+    return SixPortHardware(
+        lo_amplitude=float(config.get("lo_amplitude", 1.0)),
+        phase_err_deg=tuple(config.get("phase_err_deg", (0.0, 0.0, 0.0, 0.0))),
+        responsivity=tuple(config.get("responsivity", (1.0, 1.0, 1.0, 1.0))),
+        nonlinearity=tuple(config.get("nonlinearity", (0.0, 0.0, 0.0, 0.0))),
+        dc_offset=tuple(config.get("dc_offset", (0.0, 0.0, 0.0, 0.0))),
+        noise_v_rms=float(config.get("noise_v_rms", 0.0)),
+        seed=config.get("seed"),
+    )
+
+
+def path_from_config(config: dict) -> Path:
+    """Create one propagation path from a YAML path block."""
+    return Path(
+        distance_m=float(config["distance_m"]),
+        reflectivity=float(config.get("reflectivity", 1.0)),
+        motion=motion_from_config(config.get("motion")),
+        extra_phase=float(config.get("extra_phase", 0.0)),
+        name=str(config.get("name", "path")),
+    )
+
+
+def simulator_from_config(config: dict) -> Tuple[SixPortRadarSimulator, float]:
+    """Create a simulator and duration from a parsed YAML configuration."""
+    radar = config.get("radar", {})
+    sim = SixPortRadarSimulator(
+        f0_hz=float(radar.get("f0_hz", 24e9)),
+        fs_hz=float(radar.get("fs_hz", 200.0)),
+        hw=hardware_from_config(config.get("hardware")),
+    )
+    for path_config in config.get("paths", []):
+        sim.add_path(path_from_config(path_config))
+    duration_s = float(radar.get("duration_s", 30.0))
+    return sim, duration_s
+
+
+def simulator_from_yaml(path: str) -> Tuple[SixPortRadarSimulator, float, dict]:
+    """Load configuration.yaml and return (simulator, duration_s, config)."""
+    config = load_yaml_config(path)
+    sim, duration_s = simulator_from_config(config)
+    return sim, duration_s, config
+
+
+# ---------------------------------------------------------------------------
 # 2. Path / target description       反射回來的波函數
 # ---------------------------------------------------------------------------
 @dataclass
@@ -132,10 +331,11 @@ class SixPortHardware:
         v3 = 1/4 | -A + B  |^2
         v4 = 1/4 | jA + jB |^2
 
-    A is the reference/input wave and B is the received/output wave.
+    A and B are complex envelopes/phasors at the carrier, not sampled
+    passband sinusoids. The common exp(j*2*pi*f0*t) carrier is factored out.
 
     Imperfections you can sweep for your research:
-      lo_amplitude        : reference/input wave magnitude |A|
+      lo_amplitude        : reference CW complex-envelope magnitude |A|
       phase_err_deg       : per-detector phase error added to the B branch
       responsivity        : per-detector power->voltage gain (mismatch = imbalance)
       nonlinearity        : per-detector 2nd-order term gamma_i (V = R*P + gamma*P^2)
@@ -156,11 +356,12 @@ class SixPortHardware:
 
     def detect(self, B: np.ndarray, A: Optional[np.ndarray | complex | float] = None) -> np.ndarray:
         """
-        Given complex wave B(t) (shape [N]) produce the four detector voltages
-        (shape [4, N]) -- the raw "experimental data".
+        Given received complex envelope B(t) (shape [N]), produce the four
+        detector voltages (shape [4, N]) -- the raw "experimental data".
 
-        If A is omitted, a constant reference/input wave with magnitude
-        lo_amplitude is used.
+        If A is omitted, a stable CW reference is represented by a constant
+        complex envelope with magnitude lo_amplitude. The actual RF waveform
+        would be Re{A * exp(j*2*pi*f0*t)} before carrier factoring.
         """
         if A is None:
             A = self.lo_amplitude

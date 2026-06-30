@@ -14,31 +14,28 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from sixport_radar_sim import (
-    SixPortRadarSimulator, SixPortHardware, Path,
-    static_motion, sinusoid_motion, vital_signs_motion,
-    scene_vital_signs_with_multipath,
+    SixPortRadarSimulator,
+    hardware_from_config,
+    simulator_from_yaml,
     extract_iq, calibrate_iq, recover_displacement, spectrum,
 )
 
-FS = 200.0          # Hz
-DUR = 30.0          # s
-F0 = 24e9           # 24 GHz K-band
+CONFIG_PATH = "configuration.yaml"
+
+# ----- Scene B: target + configured clutter/interferers ---------------------
+sim_mp, DUR, config = simulator_from_yaml(CONFIG_PATH)
+FS = sim_mp.fs_hz
 
 # ----- Scene A: clean (main target only) -- the reference -------------------
-hw = SixPortHardware(phase_err_deg=(0, 8, -5, 6),
-                     responsivity=(1.0, 0.85, 1.1, 0.95),
-                     nonlinearity=(0.02, 0.0, 0.03, 0.01),
-                     noise_v_rms=0.002, seed=1)
-
-sim_clean = SixPortRadarSimulator(f0_hz=F0, fs_hz=FS, hw=hw)
-sim_clean.add_path(Path(0.5, 1.0,
-                        vital_signs_motion(4e-3, 0.30, 0.4e-3, 1.20),
-                        name="chest"))
-
-# ----- Scene B: same target + STATIC multipath + MOVING interferer ----------
-sim_mp = scene_vital_signs_with_multipath(
-    f0_hz=F0, fs_hz=FS, target_distance_m=0.5,
-    static_clutter=True, moving_interferer=True, hw=hw)
+evaluation = config.get("evaluation", {})
+target_path_name = str(evaluation.get("target_path", sim_mp.paths[0].name))
+target_path = next((p for p in sim_mp.paths if p.name == target_path_name), sim_mp.paths[0])
+sim_clean = SixPortRadarSimulator(
+    f0_hz=sim_mp.f0_hz,
+    fs_hz=sim_mp.fs_hz,
+    hw=hardware_from_config(config.get("hardware")),
+)
+sim_clean.add_path(target_path)
 
 data_clean = sim_clean.collect(DUR)
 data_mp = sim_mp.collect(DUR)
@@ -46,7 +43,7 @@ lam = sim_mp.wavelength_m
 
 # ----- Ground-truth chest displacement (for error evaluation) ---------------
 t = data_mp["t"]
-x_true = vital_signs_motion(4e-3, 0.30, 0.4e-3, 1.20)(t)
+x_true = target_path.motion(t)
 x_true = x_true - np.mean(x_true)
 
 # ----- Process CLEAN scene --------------------------------------------------
@@ -103,18 +100,34 @@ f_t, m_t = spectrum(x_true, FS)
 f_c, m_c = spectrum(x_cal, FS)
 ax[1, 1].plot(f_t, m_t * 1e3, 'k', lw=2, label="ground truth")
 ax[1, 1].plot(f_c, m_c * 1e3, lw=1, label="calibrated estimate")
-ax[1, 1].axvline(0.30, color='g', ls='--', lw=0.8)
-ax[1, 1].axvline(1.20, color='b', ls='--', lw=0.8)
-ax[1, 1].axvline(0.75, color='r', ls=':', lw=1.0, label="interferer 0.75 Hz")
+motion_config = next(
+    (p.get("motion", {}) for p in config.get("paths", [])
+     if p.get("name") == target_path.name),
+    {},
+)
+if "resp_hz" in motion_config:
+    ax[1, 1].axvline(float(motion_config["resp_hz"]), color='g', ls='--', lw=0.8)
+if "heart_hz" in motion_config:
+    ax[1, 1].axvline(float(motion_config["heart_hz"]), color='b', ls='--', lw=0.8)
+for path_config in config.get("paths", []):
+    motion = path_config.get("motion", {})
+    if motion.get("type") == "sinusoid" and "freq_hz" in motion:
+        freq = float(motion["freq_hz"])
+        label = f"{path_config.get('name', 'path')} {freq:g} Hz"
+        ax[1, 1].axvline(freq, color='r', ls=':', lw=1.0, label=label)
 ax[1, 1].set_xlim(0, 2.0)
-ax[1, 1].set_title("Displacement spectrum (resp 0.30, heart 1.20 Hz)")
+ax[1, 1].set_title("Displacement spectrum")
 ax[1, 1].set_xlabel("Hz"); ax[1, 1].set_ylabel("amplitude (mm)")
 ax[1, 1].legend(fontsize=8)
 
 fig.tight_layout()
-fig.savefig("sixport_demo.png", dpi=130)
-print("\nsaved figure -> sixport_demo.png")
+output_config = config.get("outputs", {})
+figure_path = str(output_config.get("figure_png", "sixport_demo.png"))
+npz_path = str(output_config.get("dataset_npz", "sixport_dataset.npz"))
+csv_path = str(output_config.get("dataset_csv", "sixport_dataset.csv"))
+fig.savefig(figure_path, dpi=130)
+print(f"\nsaved figure -> {figure_path}")
 
 # ----- Export the dataset (this is your collected experiment) ---------------
-SixPortRadarSimulator.save(data_mp, "sixport_dataset.npz", "sixport_dataset.csv")
-print("saved dataset -> sixport_dataset.csv / sixport_dataset.npz")
+SixPortRadarSimulator.save(data_mp, npz_path, csv_path)
+print(f"saved dataset -> {csv_path} / {npz_path}")

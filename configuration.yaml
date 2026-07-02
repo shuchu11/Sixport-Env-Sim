@@ -12,6 +12,14 @@ hardware:
   noise_v_rms: 0.002
   seed: 1
 
+direct_path:
+  enabled: true
+  name: tx_rx_direct
+  distance_m: 0.15
+  transmission_loss_db: 0.1
+  extra_phase: 0.0
+  subtract_voltage_baseline: true
+
 evaluation:
   target_path: chest
 
@@ -25,6 +33,7 @@ paths:
       resp_amp_m: 0.004
       resp_hz: 0.30
       heart_amp_m: 0.0004
+      # heart_amp_m: 0.0
       heart_hz: 1.20
       resp_phase: 0.0
       heart_phase: 0.0
@@ -32,19 +41,79 @@ paths:
   - name: wall_clutter
     distance_m: 0.87
     reflectivity: 0.8
+    extra_phase: 1.2
+    motion:
+      type: static
+
+  - name: wall_clutter2
+    distance_m: 1.00
+    reflectivity: 0.1
+    extra_phase: 0.8
+    motion:
+      type: static
+
+  - name: wall_clutter3
+    distance_m: 2.00
+    reflectivity: 0.1
+    extra_phase: 1.5
+    motion:
+      type: static
+
+  - name: wall_clutter4
+    distance_m: 2.00
+    reflectivity: 0.8
+    extra_phase: 1.5
+    motion:
+      type: static
+
+  - name: wall_clutter5
+    distance_m: 8.00
+    reflectivity: 0.1
     extra_phase: 1.1
     motion:
       type: static
 
-  - name: moving_interferer
-    distance_m: 0.70
-    reflectivity: 0.5
-    extra_phase: 0.0
+  - name: wall_clutter6
+    distance_m: 1.2
+    reflectivity: 0.1
+    extra_phase: 0.8
     motion:
-      type: sinusoid
-      amplitude_m: 0.002
-      freq_hz: 0.75
-      phase_rad: 0.0
+      type: static
+
+  # - name: wall_clutter7
+  #   distance_m: 1.2
+  #   reflectivity: 0.1
+  #   extra_phase: 0.5
+  #   motion:
+  #     type: static
+
+  # - name: wall_clutter8
+  #   distance_m: 1.4
+  #   reflectivity: 0.1
+  #   extra_phase: 0.4
+  #   motion:
+  #     type: static
+
+  # - name: moving_interferer
+  #   distance_m: 0.70
+  #   reflectivity: 0.25
+  #   extra_phase: 0.0
+  #   motion:
+  #     type: sinusoid
+  #     amplitude_m: 0.002
+  #     freq_hz: 1.75
+  #     phase_rad: 0.95
+
+  # - name: moving_interferer2
+  #   distance_m: 1.2
+  #   reflectivity: 0.5
+  #   extra_phase: 0.0
+  #   motion:
+  #     type: sinusoid
+  #     amplitude_m: 0.001
+  #     freq_hz: 1.00
+  #     phase_rad: 0.85
+
 
 outputs:
   figure_png: sixport_demo.png

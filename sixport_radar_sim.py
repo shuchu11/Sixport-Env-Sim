@@ -268,12 +268,26 @@ def path_from_config(config: dict) -> Path:
     )
 
 
+def direct_path_from_config(config: Optional[dict]) -> Optional[DirectPath]:
+    """Create the direct Tx-to-Rx leakage path from a YAML block."""
+    if not config or not config.get("enabled", False):
+        return None
+    return DirectPath(
+        distance_m=float(config.get("distance_m", 0.15)),
+        transmission_loss_db=float(config.get("transmission_loss_db", 30.0)),
+        extra_phase=float(config.get("extra_phase", 0.0)),
+        subtract_voltage_baseline=bool(config.get("subtract_voltage_baseline", True)),
+        name=str(config.get("name", "tx_rx_direct")),
+    )
+
+
 def simulator_from_config(config: dict) -> Tuple[SixPortRadarSimulator, float]:
     """Create a simulator and duration from a parsed YAML configuration."""
     radar = config.get("radar", {})
     sim = SixPortRadarSimulator(
         f0_hz=float(radar.get("f0_hz", 24e9)),
         fs_hz=float(radar.get("fs_hz", 200.0)),
+        direct_path=direct_path_from_config(config.get("direct_path")),
         hw=hardware_from_config(config.get("hardware")),
     )
     for path_config in config.get("paths", []):
@@ -317,6 +331,31 @@ class Path:
         return self.reflectivity * np.exp(1j * phi)
 
 
+@dataclass
+class DirectPath:
+    """
+    Direct Tx-to-Rx leakage/coupling path.
+
+    This is not an external reflection. It is a one-way propagation/coupling
+    term, so its phase uses 2*pi*d/lambda instead of the reflected-path
+    4*pi*d/lambda.
+    """
+    distance_m: float = 0.15
+    transmission_loss_db: float = 30.0
+    extra_phase: float = 0.0
+    subtract_voltage_baseline: bool = True
+    name: str = "tx_rx_direct"
+
+    @property
+    def amplitude(self) -> float:
+        return 10.0 ** (-self.transmission_loss_db / 20.0)
+
+    def complex_return(self, t: np.ndarray, wavelength_m: float) -> np.ndarray:
+        phi = (2.0 * np.pi / wavelength_m) * self.distance_m + self.extra_phase
+        value = self.amplitude * np.exp(1j * phi)
+        return np.full(len(t), value, dtype=complex)
+
+
 # ---------------------------------------------------------------------------
 # 3. Six-port hardware model (imperfections live here)   量測4-port功率，加入硬體干擾選項。目前輸入波振幅是定值感覺有誤
 # ---------------------------------------------------------------------------
@@ -354,7 +393,8 @@ class SixPortHardware:
         self._phase_err = np.deg2rad(np.array(self.phase_err_deg))
         self._rng = np.random.default_rng(self.seed)
 
-    def detect(self, B: np.ndarray, A: Optional[np.ndarray | complex | float] = None) -> np.ndarray:
+    def detect(self, B: np.ndarray, A: Optional[np.ndarray | complex | float] = None,
+               add_noise: bool = True) -> np.ndarray:
         """
         Given received complex envelope B(t) (shape [N]), produce the four
         detector voltages (shape [4, N]) -- the raw "experimental data".
@@ -380,7 +420,7 @@ class SixPortHardware:
             R = self.responsivity[i]
             g = self.nonlinearity[i]
             Vi = R * P + g * P ** 2 + self.dc_offset[i]
-            if self.noise_v_rms > 0:
+            if add_noise and self.noise_v_rms > 0:
                 Vi = Vi + self._rng.normal(0.0, self.noise_v_rms, size=N)
             V[i] = Vi
         return V
@@ -397,11 +437,13 @@ class SixPortRadarSimulator:
     f0_hz   : carrier frequency (e.g. 24e9 for K-band, 5.8e9 for ISM, 60e9 mmWave)
     fs_hz   : sampling rate of the four baseband detector channels
     paths   : list of Path objects (main target + clutter + interferers)
+    direct_path : optional direct Tx-to-Rx leakage/coupling term
     hw      : SixPortHardware model
     """
     f0_hz: float = 24.0e9
     fs_hz: float = 1000.0
     paths: List[Path] = field(default_factory=list)
+    direct_path: Optional[DirectPath] = None
     hw: SixPortHardware = field(default_factory=SixPortHardware)
 
     @property
@@ -413,50 +455,102 @@ class SixPortRadarSimulator:
         return self
 
     def baseband(self, t: np.ndarray) -> np.ndarray:
-        """Total complex return B(t) = sum over paths. This is the ground truth."""
+        """External reflected return B_ext(t) = sum over target/clutter paths."""
         B = np.zeros(len(t), dtype=complex)
         for p in self.paths:
             B += p.complex_return(t, self.wavelength_m)
         return B
 
+    def direct_baseband(self, t: np.ndarray) -> np.ndarray:
+        """Direct Tx-to-Rx leakage term, if configured."""
+        if self.direct_path is None:
+            return np.zeros(len(t), dtype=complex)
+        return self.direct_path.complex_return(t, self.wavelength_m)
+
     def collect(self, duration_s: float) -> dict:
         """
         Run an 'experiment': returns a dict with
           t            : time vector
-          V            : (4, N) raw detector voltages  <-- your measured data
-          B_true       : complex baseband ground truth (all paths summed)
+          V            : (4, N) raw detector voltages, including direct leakage
+          V_direct     : (4, N) detector baseline from the direct path alone
+          V_external   : (4, N) V - V_direct, if direct subtraction is enabled
+          B_true       : complex baseband ground truth, external + direct paths
+          B_external   : complex baseband from external reflected paths only
+          B_direct     : complex baseband from direct Tx-to-Rx coupling only
           per_path     : dict name -> complex baseband of that path alone
           meta         : configuration metadata
         """
         n = int(round(duration_s * self.fs_hz))
         t = np.arange(n) / self.fs_hz
-        B = self.baseband(t)
+        B_external = self.baseband(t)
+        B_direct = self.direct_baseband(t)
+        B = B_external + B_direct
         V = self.hw.detect(B)
+        V_direct = self.hw.detect(B_direct, add_noise=False)
+        V_external = None
+        if self.direct_path is not None and self.direct_path.subtract_voltage_baseline:
+            V_external = V - V_direct
         per_path = {p.name: p.complex_return(t, self.wavelength_m) for p in self.paths}
+        if self.direct_path is not None:
+            per_path[self.direct_path.name] = B_direct
         meta = {
             "f0_hz": self.f0_hz,
             "fs_hz": self.fs_hz,
             "wavelength_m": self.wavelength_m,
             "duration_s": duration_s,
             "n_samples": n,
+            "direct_path": None if self.direct_path is None else {
+                "name": self.direct_path.name,
+                "distance_m": self.direct_path.distance_m,
+                "transmission_loss_db": self.direct_path.transmission_loss_db,
+                "amplitude": self.direct_path.amplitude,
+                "subtract_voltage_baseline": self.direct_path.subtract_voltage_baseline,
+            },
             "paths": [{"name": p.name, "distance_m": p.distance_m,
                        "reflectivity": p.reflectivity} for p in self.paths],
         }
-        return {"t": t, "V": V, "B_true": B, "per_path": per_path, "meta": meta}
+        data = {
+            "t": t,
+            "V": V,
+            "V_direct": V_direct,
+            "B_true": B,
+            "B_external": B_external,
+            "B_direct": B_direct,
+            "per_path": per_path,
+            "meta": meta,
+        }
+        if V_external is not None:
+            data["V_external"] = V_external
+        return data
 
     # ---- persistence: this is your "data collection" output -------------
     @staticmethod
     def save(data: dict, npz_path: str, csv_path: Optional[str] = None) -> None:
-        np.savez_compressed(
-            npz_path,
-            t=data["t"], V=data["V"],
-            B_true_real=data["B_true"].real, B_true_imag=data["B_true"].imag,
-            meta=json.dumps(data["meta"]),
-        )
+        zero_complex = np.zeros_like(data["B_true"])
+        arrays = {
+            "t": data["t"],
+            "V": data["V"],
+            "V_direct": data["V_direct"],
+            "B_true_real": data["B_true"].real,
+            "B_true_imag": data["B_true"].imag,
+            "B_external_real": data.get("B_external", data["B_true"]).real,
+            "B_external_imag": data.get("B_external", data["B_true"]).imag,
+            "B_direct_real": data.get("B_direct", zero_complex).real,
+            "B_direct_imag": data.get("B_direct", zero_complex).imag,
+            "meta": json.dumps(data["meta"]),
+        }
+        if "V_external" in data:
+            arrays["V_external"] = data["V_external"]
+        np.savez_compressed(npz_path, **arrays)
         if csv_path:
             V = data["V"]
-            arr = np.column_stack([data["t"], V[0], V[1], V[2], V[3]])
             header = "t,v1,v2,v3,v4"
+            columns = [data["t"], V[0], V[1], V[2], V[3]]
+            if "V_external" in data:
+                Ve = data["V_external"]
+                columns.extend([Ve[0], Ve[1], Ve[2], Ve[3]])
+                header += ",v1_external,v2_external,v3_external,v4_external"
+            arr = np.column_stack(columns)
             np.savetxt(csv_path, arr, delimiter=",", header=header, comments="")
 
 

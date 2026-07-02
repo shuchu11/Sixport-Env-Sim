@@ -33,12 +33,15 @@ target_path = next((p for p in sim_mp.paths if p.name == target_path_name), sim_
 sim_clean = SixPortRadarSimulator(
     f0_hz=sim_mp.f0_hz,
     fs_hz=sim_mp.fs_hz,
+    direct_path=sim_mp.direct_path,
     hw=hardware_from_config(config.get("hardware")),
 )
 sim_clean.add_path(target_path)
 
 data_clean = sim_clean.collect(DUR)
 data_mp = sim_mp.collect(DUR)
+V_clean = data_clean.get("V_external", data_clean["V"])
+V_mp = data_mp.get("V_external", data_mp["V"])
 lam = sim_mp.wavelength_m
 
 # ----- Ground-truth chest displacement (for error evaluation) ---------------
@@ -47,12 +50,12 @@ x_true = target_path.motion(t)
 x_true = x_true - np.mean(x_true)
 
 # ----- Process CLEAN scene --------------------------------------------------
-I0, Q0 = extract_iq(data_clean["V"])
+I0, Q0 = extract_iq(V_clean)
 I0c, Q0c, _ = calibrate_iq(I0, Q0)
 x_clean = recover_displacement(I0c, Q0c, lam)
 
 # ----- Process MULTIPATH scene ----------------------------------------------
-I1, Q1 = extract_iq(data_mp["V"])
+I1, Q1 = extract_iq(V_mp)
 # (a) no mitigation -- just demodulate the corrupted IQ
 x_raw = recover_displacement(I1, Q1, lam)
 # (b) baseline mitigation: ellipse calibration removes the STATIC-multipath DC
@@ -73,8 +76,8 @@ fig, ax = plt.subplots(2, 2, figsize=(13, 9))
 
 # (1) Raw four-detector voltages -- the measured "experimental data"
 for i in range(4):
-    ax[0, 0].plot(t[:400], data_mp["V"][i][:400], lw=0.9, label=f"v{i+1}")
-ax[0, 0].set_title("Raw four-detector voltages (measured data)")
+    ax[0, 0].plot(t[:400], V_mp[i][:400], lw=0.9, label=f"v{i+1}")
+ax[0, 0].set_title("Four-detector voltages after direct-path subtraction")
 ax[0, 0].set_xlabel("time (s)"); ax[0, 0].set_ylabel("V"); ax[0, 0].legend(ncol=4, fontsize=8)
 
 # (2) IQ plane: clean vs multipath(raw) vs multipath(calibrated)

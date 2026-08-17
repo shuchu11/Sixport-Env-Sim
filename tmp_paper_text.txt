@@ -1,0 +1,376 @@
+--- PAGE 1 ---
+ 
+Calibration of a Six-Port-Based CW Radar 
+Using Unknown Positions of a Target 
+ 
+Kamil Staszek 
+Institute of Electronics 
+AGH University of Science and Technology 
+Krakow, Poland 
+kamil.staszek@agh.edu.pl
+Abstract—In this paper a new approach to calibrate 
+continuous-wave radars that utilize a six-port interferometer, is 
+proposed. The presented procedure makes use of an arbitrary 
+number of unknown target’s positions and is suitable for 
+nearfield application. With this calibration method also a target 
+that changes its radar cross-section along the measured distance 
+can be used. The procedure was tested utilizing a six-port-based 
+continuous-wave radar operating at 2.35 GHz for various 
+number of target’s positions and their spread, showing the 
+obtainable distance measurement error not exceeding 0.012 of 
+the wavelength. Furthermore, the obtained measurement error 
+distribution allows for defining simple and practical guidelines 
+for calibrating radars with the use of the proposed method. 
+Keywords—continuous-wave radar, six-port network, 
+interferometer, calibration, distance measurement 
+I. INTRODUCTION 
+Continuous-wave (CW) radars are widely used as they 
+constitute the simplest microwave circuitry enabling remote 
+sensing. Although the most common topology of CW radars 
+involves frequency conversion realized with the use of mixers 
+[1], solutions utilizing six-port (multiport) interferometers are 
+also reported [2]. In contrast to their mixer-based counterparts, 
+they comprise a correlator which combines the signal reflected 
+from a target (radiated and captured by the radar) with an 
+internally formed reference signal. An interference of these 
+two signals is directly measured with the use of RF power 
+detectors with no frequency conversion, what makes the 
+circuitry simpler and improves the measurement linearity [3]. 
+The mentioned interferometer can be realized as a passive 
+multiport power distribution network. Its number of ports and 
+the inner power distribution scheme together with the power 
+detectors’ measurement uncertainty define the final 
+measurement performance [4]. In general, a higher number of 
+power detectors (meaning also a higher number of ports of the 
+distribution network) provides lower measurement 
+uncertainty. The trade-off however, is a larger and more 
+complex circuitry. Therefore, the most common 
+interferometers are six-ports ones, as they contain the 
+minimum number of three power detectors needed for an 
+ambiguous measurement [5]. The remaining ports serve as 
+excitation port, measurement port, and a port to which an 
+additional power detector is connected, which can be used 
+e.g., for power level monitoring. 
+In order to provide a reliable measurement such a radar 
+must be beforehand calibrated. In general, methods for 
+calibration of interferometer-based CW radars can be divided 
+into two groups. The first one is constituted by procedures, 
+which require to take several measurements of power  
+ 
+ 
+Fig. 1. A generic diagram of a six-port-based CW radar. 
+measured by the mentioned power detectors for a target 
+located in several known positions. An example of such a 
+procedure used for calibration a six-port-based CW radar 
+operating at 24 GHz is reported in [6]. It provides an excellent 
+distance measurement performance at the expense of high 
+computational effort and the need for precise knowledge of 
+the target positions utilized for calibration. Both these aspects 
+may be particularly difficult in low-cost applications. On the 
+other hand, there are method utilizing the power readings for 
+unknown, but reasonably chosen target’s locations [7]. They 
+offer lower accuracy; however, they can be implemented in 
+systems of lower computational capacity. In majority of these 
+calibration methods, it is required that the same target is used 
+and it reflects microwave signal uniformly, hence the 
+measured radar echo exhibits a regular spiral shape having a 
+radius that exponentially decreases with increasing target’s 
+distance [8]. However, in general the target’s illumination 
+may not be identical for all positions, particularly if the target 
+is not in farfield, but it is located close to the radar. In such a 
+case the spiral mentioned above becomes deteriorated and 
+such conditions affect the calibration performance, decreasing 
+the measurement quality. 
+In this paper, a novel procedure for calibration of six-port-
+based CW radars is proposed. It utilizes a recently reported 
+method [9], which was initially designated to calibrate six-port 
+reflectometers. The presented procedure utilizes unknown 
+target’s positions, and does not require constant illumination 
+of the target by radar, which makes it also suitable for radar 
+calibration in a nearfield, in contrast to other reported 
+solutions. The method is tested against the required number of 
+the target’s positions and their spread over the measured 
+distance with the use of a six-port-based CW radar operating 
+at 2.35 GHz. It is shown that for a large set of different target’s 
+positions used in the calibration the distance measurement 
+error does not exceed 1.5 mm (0.012λ) over the range of 
+320 mm. 
+II. THEORETICAL BACKGROUND 
+A general diagram of a six-port-based CW radar is 
+illustrated in Fig. 1. The key element is the passive power 
+distribution network, which is fed by RF signal from a signal 
+source connected to port #1. This signal is distributed to 
+port #2, to which antenna is connected and to ports #3 – #6  
+ 
+This work was supported by the Statutory Research of Institute of 
+Electronics AGH. 
+978-83-956020-3-0 ©2022 Warsaw University of Technology
+MIKON-2022,Gdańsk, PolandAuthorized licensed use limited to: Akademia Gorniczo-Hutnicza. Downloaded on November 09,2022 at 14:48:05 UTC from IEEE Xplore.  Restrictions apply. 
+
+--- PAGE 2 ---
+ 
+Fig. 2.  Reflection coefficients of the antenna measured by an ideal six-port-
+based CW radar for eight target’s positions equally  distributed over the 
+distance equal to wavelength. 
+equipped with power detectors P 1 – P 3 and P REF . Next, the 
+signal emitted by the antenna reflects from a target located at 
+the distance D and is received by the antenna and distributed 
+by the six-port network to power detectors P 1 – P3. Taking the 
+above signal propagation into account, the measured  signal 
+can be interpreted as the complex reflection coeffi cient Γ 
+defined as: 
+ =  + 	
+    (1) 
+where Γ 0 is the reflection coefficient of the utilized antenna in 
+free space and Γ T represents the reflection from target. 
+Simultaneously, γ = α + jβ is a complex propagation constant, 
+which introduces exponential decrease of the magnit ude and 
+linear phase shift of the signal along with the dis tance D. 
+Hence, the reflection coefficients measured subsequ ently for 
+increasing distance D form a spiral on a complex plane, as 
+shown in Fig. 2. The center of that spiral is located in Γ 0, which 
+can be determined e.g., by taking the measurement w hen no 
+target is in the antenna’s field of view. After sub tracting Γ 0 
+value, the distance D can be determined from the following 
+expression: 
+ =
+
+
+arg  −    (2) 
+where λ is the wavelength at the frequency of opera tion. It 
+should be emphasized that for each CW radars utiliz ing a 
+single frequency the range of unambiguously measure d 
+distance D is limited to λ/2. 
+In general, the relation between the measured power P1-P3 
+and the reflection coefficient Γ takes the following form [10]: 
+ =   +  +  +  +  +  (3) 
+where ai and bi (i = 1, 2, 3) are system constants need to be 
+found prior to the measurement. For an ideal six-po rt-based 
+radar the value of Γ measured for a large number of  target’s 
+positions form the spiral shown in Fig. 2. However,  a 
+utilization of (3) with ideal parameters ai and bi for a real 
+power distribution network makes the spiral more elliptic and 
+shifted on the complex plane. These effects are pre sented in 
+Fig. 3 and Fig. 4 for different number of target’s positions N 
+and their spread L defined as a distance between the first and 
+the last one. Such a deterioration results from magnitude- and 
+phase-imbalance of the power distribution network a nd non-
+identical sensitivity of power detectors [10]. 
+III.  DESCRIPTION OF THE CALIBRATION ALGORITHM  
+The algorithm utilized in the radar calibration has  been 
+recently reported in [9]. Although it was intended for 
+reflectometers, due to close relation between the m easured 
+distance D and the reflection coefficient Γ described in the  
+ 
+  
+  
+Fig. 3.  Reflection coefficients of the antenna measured a r eal uncalibrated 
+six-port-based CW radar for different number of tar get’s positions N and 
+fixed spread L = 1.5λ defined as a distance between the first and  the last 
+position. 
+ 
+  
+  
+Fig. 4.  Reflection coefficients of the antenna measured a r eal uncalibrated 
+six-port-based CW radar for fixed number of target’ s positions N = 6 and 
+different spread L defined as a distance between the first and the last position. 
+Authorized licensed use limited to: Akademia Gorniczo-Hutnicza. Downloaded on November 09,2022 at 14:48:05 UTC from IEEE Xplore.  Restrictions apply. 
+
+--- PAGE 3 ---
+previous section, this algorithm can successfully be applied in 
+CW radars as well. It utilizes an arbitrary number N of 
+calibration constants having unknown reflection coefficients, 
+which (in the considered radar application) corresp onds to N 
+unknown target’s locations. Furthermore, the algorithm does 
+not impose any particular requirements on magnitudes of the 
+calibration constants. Therefore, the target used in calibration 
+can be arbitrary illuminated, as the reflected sign al’s 
+magnitude does not need to follow any particular trend as e.g., 
+in [7]. This advantage makes this algorithm especially suitable 
+for calibration in a nearfield, or for a target tha t changes its 
+radar cross-section along with the distance (e.g., rotating 
+object). 
+Next to the arbitrary magnitude, the phase of calib ration 
+constants utilized in the considered algorithm can also be 
+arbitrary, which means that the target’s locations used for 
+radar calibration can also be arbitrary. There is, however, one 
+phase-related requirement that is crucial to the calibration. To 
+run the algorithm, it must be determined if the sub sequent 
+reflection coefficients rotate clockwise or counter-clockwise. 
+Therefore, the subsequent target’s distances must be generally 
+increasing or decreasing and this fact must be given as an input 
+to the algorithm. It should be underlined that part icular 
+distances between these positions do not have to be equal, and 
+some deterioration of the assumed direction may occ ur. 
+However, the overall decreasing or increasing character of the 
+distance values must be clearly seen. This is needed to provide 
+correct phase orientation for the algorithm. Failin g this will 
+result in inverse sign if the measured reflection c oefficient’s 
+phase, which will inverse the sign of the measured distance. 
+This is the only requirement regarding the target’s  positions, 
+which in practice means that a distance between two  
+consecutive target’s positions should be not greate r than λ/4 
+(phase difference < 180°). As seen it does not intr oduce any 
+practical limitations. In Fig. 4 it is seen that fo r N = 6 and 
+L = 2λ the phase difference for subsequent reflectio n 
+coefficients exceeds 180°, which is incorrectly interpreted by 
+the algorithm, and in turn leads to inversed sign o f the 
+measured reflection coefficient’s phase and therefore inversed 
+distance D. 
+As mentioned above, the calibration algorithm uses 
+arbitrary and unknown magnitudes and phases of the 
+reflection coefficients. Hence, it provides a free choice of 
+target’s positions. However, as described in [9], to obtain the 
+algorithm’s convergence the measured reflection coefficients 
+should cover possibly large range of both magnitude  and 
+phase. In the considered radar application this con dition 
+indicates that the chosen target’s positions should  also 
+distinctly vary. By enlarging the spread L also the range of the 
+measured reflection coefficients’ magnitudes increases, which 
+is crucial to the algorithm’s convergence. However,  for a 
+given N, one can find the value of L for which the reflection 
+coefficients form a straight line ( N = 4 or N = 7 and L = 1.5λ 
+shown in Fig. 3), which obviously would not lead to  
+calibration’s convergence. Hence, the optimum numbe r of 
+target’s positions N and their spread L need to be found. 
+IV.  MEASUREMENT SETUP  
+For the described search of the optimum N and L values a 
+six-port-based CW radar presented in Fig. 5 was use d. It 
+operates at the frequency of 2.35 GHz, utilizes the  
+interferometer described in [11], and is fed with + 15 dBm of 
+power. The power measurement was realized using thr ee  
+ 
+ 
+(a) 
+ 
+(b) 
+Fig. 5.  The measurement setup in an anechoic chamber: (a) s ix-port-based 
+CW radar and corner reflector on a robotic arm and (b) closer view of the 
+radar. 
+integrated power detectors LTC5587 equipped with bu ilt-in 
+12-bit ADCs. To suppress their nonlinear responses three 
+dedicated Look-Up Tables were applied. The utilized  radar 
+has separate antenna for transmitting and receiving, however, 
+the relation between the received radar echo and th e power 
+values P1 – P3 can be described by (3) as well, hence the 
+described algorithm can be applied with no modifications. The 
+only difference for the radar having two antennas with respect 
+to a radar with a single antenna is that the center of the spiral 
+Γ0 in (1) corresponds to the isolation between these two 
+antennas, which in practice can be lower than the r eflection 
+coefficient of a single antenna. As the target a corner reflector 
+having the outer edges’ length of 100 mm was used. To set the 
+target at an arbitrary distance from the radar a robotic arm was 
+utilized. A photograph of the developed measurement  setup 
+located in an anechoic chamber is shown in Fig. 5. 
+V.  RADAR ’S CALIBRATION  
+To find the optimum N and L values the following 
+procedure was performed. The target was placed in front if the 
+radar’s antennas at the distance D varying from 100 mm to 
+420 mm with the step of 0.1 mm. For each position the power 
+readings P1 – P3 were acquired. Further, from the collected 
+3201 sets of power readings N sets of power readings  
+ 
+Authorized licensed use limited to: Akademia Gorniczo-Hutnicza. Downloaded on November 09,2022 at 14:48:05 UTC from IEEE Xplore.  Restrictions apply. 
+
+--- PAGE 4 ---
+ 
+(a) 
+ 
+(b) 
+Fig. 6.  (a) The maximum and (b) RMS distance measurement er ror 
+obtained for different number of target’s positions  N and different spread L 
+defined as a distance between the first and the las t position. Measurements 
+performed with the use of the six-port-based CW rad ar at the frequency of 
+2.35 GHz, for the distance range from 100 mm to 420 mm. 
+corresponding to the target’s positions with the spread L were 
+selected and used as the input to the calibration algorithm. The 
+procedure was executed for each N value from 3 to 20, and for 
+the spread L values falling between 0 and 2.5λ (320 mm). 
+Moreover, for each tested set of positions the first position was 
+the one of 100 mm from the radar. Having this large  number 
+of calibration results, the collected power reading s for 3201 
+target’s positions were used to calculate the targe t’s distance 
+using (3), in which the coefficients ai and bi were taken from 
+the corresponding calibration results. Finally, the  calculated 
+distance was compared against the genuine one and t he 
+maximum and RMS values of errors were calculated for each 
+considered set of N and L values. The obtained measurement 
+error distributions are illustrated in Fig. 6. 
+Analyzing the measured distance errors’ distribution a few 
+conclusions can be formulated. First, the range of target’s 
+positions L should exceed 0.5λ to cover at least full 360°-range 
+of the signal Γ, which is used to calculate the dis tance. 
+Furthermore, for a given number of the utilized pos itions N 
+the spread L cannot be too large, as it may lead to fail the phase 
+condition described in Section III and shown as the  last 
+example in Fig. 4. As a consequence, the sign of the measured 
+distance is incorrect and manifests itself in large  errors. It is 
+seen in the bottom right corner of the errors’ distributions. The 
+final conclusion is that the number of target’s position N does 
+not need to be high, since there is no observable improvement 
+of the measurement error for increasing N. Simultaneously, 
+the computational effort for the utilized algorithm  
+significantly increases with N. 
+VI.  CONCLUSIONS  
+In this paper, a procedure for calibration six-port -based 
+CW radars was proposed. It makes use of N unknown target’s 
+positions, which do not have to be known. Moreover,  the 
+utilized algorithm is robust to the magnitude of th e received 
+radar’s echo, which makes the proposed approach suitable for 
+nearfield application and/or a calibration with the use a target 
+that changes its radar cross-section at different positions. The 
+proposed calibration procedure was tested with the use of the 
+six-port-based CW radar operating at the frequency of 
+2.35 GHz for the target’s distances between 100 mm and 
+420 mm. Over this range different numbers of calibr ation 
+positions as well as their different spacing were tested against 
+the obtainable distance measurement error. The distribution of 
+the maximum and RMS error values confirms that such radars 
+can be successfully calibrated following the proposed method 
+and provides a simple guideline helping to select t he target’s 
+positions leading to the minimum measurement errors. 
+REFERENCES  
+[1]  M. Reznicek, P. Bezousek, “Commercial CW Doppler radar design and 
+application,” in Prof. 27th International Conference Radioelektronika 
+(RADIOELEKTRONIKA) , Brno, Chech Republic, Jun. 2017, pp. 1-5. 
+[2]  E. Moldovan, S.-O. Tatu, T. Gaman, K. Wu, “A new 94-GHz six-port 
+collision-avoidance radar sensor,” IEEE Trans. Microw. Theory 
+Techn. , vol. 52, no. 3, pp. 751-759, Mar. 2004. 
+[3]  S. O. Tatu, A. Serban, M. Helaoui, and A. Koelpin, “Multiport 
+technology: The new rise of an old concept,” IEEE Microwave 
+Magazine , vol. 15, no. 7, pp. 34-44, Nov. 2014. 
+[4]  K. Staszek, S. Gruszczynski, and K. Wincza, “Theore tical limits and 
+accuracy improvement of reflection coefficient meas urements in six-
+port reflectometers,” IEEE Trans. Microw. Theory Techn. , vol. 61, no. 
+8, pp. 2966-2974, Aug. 2013. 
+[5]  F. M. Ghannouchi, A. Mohammadi, The six-port technique with 
+microwave and wireless applications . Norwood, MA, USA: Artech 
+House 2009. 
+[6]  K. Staszek, S. Linz, F. Lurz, S. Mann, R. Weigel, A . Koelpin, 
+“Improved calibration procedure for six-port based precise 
+displacement measurements,” in Proc. IEEE Topical Conference on 
+Wireless Sensors and Sensor Networks (WiSNet),  Austin, USA, Jan. 
+2016, pp. 60-63. 
+[7]  S. Linz, G. Vinci, S. Lindner, S. Mann, F. Lurz, F. Barbon, R. Weigel, 
+and A. Koelpin, “I/Q imbalance compensation for six -port 
+interferometers in radar applications,” in Proc. 44th European 
+Microwave Conference , Rome, Italy, Dec. 2014, pp. 6-9. 
+[8]  C. Will, S. Linz, S. Mann, F. Lurz, S. Lindner, R. Weigel, and A. 
+Koelpin, “Segmental polynomial approximation based phase error 
+correction for precise near field displacement measurements using Six-
+Port microwave interferometers,” in Proc. IEEE Topical Conference on 
+Wireless Sensors and Sensor Networks (WiSNet),  Phoenix, USA, Jan. 
+2017, pp. 23-25. 
+[9]  K. Staszek, “Six-port calibration utilizing matched load and unknown 
+calibration loads,” IEEE Trans. Microw. Theory Techn ., vol. 66, no. 
+10, pp. 4617-4626, Oct. 2018. 
+[10]  R. Smolarz, K. Staszek, K. Wincza, S. Gruszczynski,  “A 24 GHz 
+microwave sensor with built-in calibration capabili ty designed in 
+MMIC technology,” IEEE Access , vol. 9, no. , pp. 31513-31524, Mar. 
+2021. 
+[11]  K. Staszek, S. Gruszczynski, and K. Wincza, “Six-po rt reflectometer 
+providing enhanced power distribution,” IEEE Trans. Microw. Theory 
+Techn ., vol. 64, no. 3, pp. 939-951, Mar. 2016. 
+ 
+Authorized licensed use limited to: Akademia Gorniczo-Hutnicza. Downloaded on November 09,2022 at 14:48:05 UTC from IEEE Xplore.  Restrictions apply. 
